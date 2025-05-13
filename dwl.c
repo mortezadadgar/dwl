@@ -317,6 +317,7 @@ static void focusstack(const Arg *arg);
 static Client *focustop(Monitor *m);
 static void fullscreennotify(struct wl_listener *listener, void *data);
 static void gpureset(struct wl_listener *listener, void *data);
+static void regions(int sig);
 static void handlesig(int signo);
 static void incnmaster(const Arg *arg);
 static void inputdevice(struct wl_listener *listener, void *data);
@@ -2741,6 +2742,8 @@ setup(void)
 	for (i = 0; i < (int)LENGTH(sig); i++)
 		sigaction(sig[i], &sa, NULL);
 
+	signal(SIGUSR1, regions);
+
 	wlr_log_init(log_level, NULL);
 
 	/* The Wayland display is managed by libwayland. It handles accepting
@@ -3462,6 +3465,26 @@ zoom(const Arg *arg)
 
 	focusclient(sel, 1);
 	arrange(selmon);
+}
+
+void
+regions(int sig)
+{
+	Client *c;
+	Monitor *m;
+	FILE *f;
+
+	f = fopen("/tmp/regions", "w");
+
+	wl_list_for_each(m, &mons, link)
+		wl_list_for_each(c, &clients, link)
+			if (VISIBLEON(c, m))
+				fprintf(f, "%d,%d %dx%d\n",
+				        c->geom.x, c->geom.y, c->geom.width, c->geom.height);
+
+	fclose(f);
+
+	signal(SIGUSR1, regions);
 }
 
 #ifdef XWAYLAND
