@@ -444,6 +444,12 @@ static Monitor *selmon;
 static struct zdwl_ipc_manager_v2_interface dwl_manager_implementation = {.release = dwl_ipc_manager_release, .get_output = dwl_ipc_manager_get_output};
 static struct zdwl_ipc_output_v2_interface dwl_output_implementation = {.release = dwl_ipc_output_release, .set_tags = dwl_ipc_output_set_tags, .set_layout = dwl_ipc_output_set_layout, .set_client_tags = dwl_ipc_output_set_client_tags};
 
+static const struct xkb_rule_names en_rules = {.layout = "us"};
+static struct xkb_context *en_context;
+static struct xkb_keymap *en_keymap;
+static struct xkb_state *en_state, *en_state_shift;
+static xkb_mod_index_t en_shift;
+
 #ifdef XWAYLAND
 static void activatex11(struct wl_listener *listener, void *data);
 static void associatex11(struct wl_listener *listener, void *data);
@@ -739,6 +745,10 @@ cleanup(void)
 	wlr_backend_destroy(backend);
 
 	wl_display_destroy(dpy);
+	xkb_state_unref(en_state);
+	xkb_state_unref(en_state_shift);
+	xkb_keymap_unref(en_keymap);
+	xkb_context_unref(en_context);
 	/* Destroy after the wayland display (when the monitors are already destroyed)
 	   to avoid destroying them with an invalid scene output. */
 	wlr_scene_node_destroy(&scene->tree.node);
@@ -1838,8 +1848,10 @@ keypress(struct wl_listener *listener, void *data)
 	uint32_t keycode = event->keycode + 8;
 	/* Get a list of keysyms based on the keymap for this keyboard */
 	const xkb_keysym_t *syms;
+	int shift = xkb_state_mod_index_is_active(
+			group->wlr_group->keyboard.xkb_state, en_shift, XKB_STATE_MODS_EFFECTIVE);
 	int nsyms = xkb_state_key_get_syms(
-			group->wlr_group->keyboard.xkb_state, keycode, &syms);
+			shift ? en_state_shift : en_state, keycode, &syms);
 
 	int handled = 0;
 	uint32_t mods = wlr_keyboard_get_modifiers(&group->wlr_group->keyboard);
@@ -2830,6 +2842,13 @@ setup(void)
 	 * pointer, touch, and drawing tablet device. We also rig up a listener to
 	 * let us know when new input devices are available on the backend.
 	 */
+	en_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	en_keymap = xkb_keymap_new_from_names(en_context, &en_rules,
+		XKB_KEYMAP_COMPILE_NO_FLAGS);
+	en_state = xkb_state_new(en_keymap);
+	en_state_shift = xkb_state_new(en_keymap);
+	en_shift = xkb_keymap_mod_get_index(en_keymap, XKB_MOD_NAME_SHIFT);
+	xkb_state_update_mask(en_state_shift, 1 << en_shift, 0, 0, 0, 0, 0);
 	LISTEN_STATIC(&backend->events.new_input, inputdevice);
 	virtual_keyboard_mgr = wlr_virtual_keyboard_manager_v1_create(dpy);
 	LISTEN_STATIC(&virtual_keyboard_mgr->events.new_virtual_keyboard, virtualkeyboard);
